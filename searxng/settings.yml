@@ -1,0 +1,52 @@
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "Web Agent"
+  enable_metrics: false
+
+search:
+  safe_search: 0
+  default_lang: "en"
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "web-agent-local-secret-32chars!!"
+  bind_address: "0.0.0.0"
+  port: 8080
+  base_url: "http://localhost:8080/"
+  image_proxy: false
+  method: "GET"
+
+doi_resolvers:
+  oadoi.org: "https://oadoi.org/"
+  sci-hub.se: "https://sci-hub.se/"
+
+default_doi_resolver: "oadoi.org"
+
+engines:
+  - name: google
+    engine: google
+    shortcut: g
+
+  - name: bing
+    engine: bing
+    shortcut: b
+
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+
+  - name: github
+    engine: github
+    shortcut: gh
+
+  - name: arxiv
+    engine: arxiv
+    shortcut: ar

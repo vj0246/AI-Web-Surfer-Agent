@@ -1,0 +1,35 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./chroma_db:/app/chroma_db          # persist vector cache across restarts
+    environment:
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      PLANNER_MODEL: ${PLANNER_MODEL:-phi3:mini}
+      SYNTHESIZER_MODEL: ${SYNTHESIZER_MODEL:-llama3.1:8b}
+      EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
+      CHROMA_PATH: /app/chroma_db
+      SEARXNG_URL: http://searxng:8080      # Allows backend to talk to SearXNG
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # allows container to reach host Ollama
+    depends_on:
+      - searxng                             # Ensures SearXNG starts before the backend
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - backend
+    environment:
+      VITE_BACKEND_API_URL: ${VITE_BACKEND_API_URL:-http://localhost:8000}
+
+  searxng:
+    image: searxng/searxng:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng:/etc/searxng              # Mounts your custom settings folder
+    restart: unless-stopped
