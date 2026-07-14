@@ -17,6 +17,23 @@ from app.services.session_store import append_turn, get_history_text
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
+# Channels that use operator.add reducers in AgentState. When mirroring the graph
+# stream into a display-only state, these must accumulate (parallel researchers each
+# emit a delta), not overwrite — otherwise SSE counts show only the last node's slice.
+_REDUCER_KEYS = frozenset({"search_hits", "page_extracts", "errors", "researcher_results"})
+
+
+def _merge_state(state: AgentState, update: dict) -> AgentState:
+    merged = dict(state)
+    for k, v in update.items():
+        if v is None:
+            continue
+        if k in _REDUCER_KEYS and isinstance(v, list) and isinstance(merged.get(k), list):
+            merged[k] = merged[k] + v
+        else:
+            merged[k] = v
+    return merged  # type: ignore[return-value]
+
 
 class ChatRequest(BaseModel):
     query: str
@@ -129,7 +146,7 @@ async def chat_stream(request: ChatRequest):
                 for node_name, node_state in chunk.items():
                     if not isinstance(node_state, dict):
                         continue
-                    final_state = {**final_state, **{k: v for k, v in node_state.items() if v is not None}}
+                    final_state = _merge_state(final_state, node_state)
 
                     # Synthesize node — stream the answer it already produced (single
                     # LLM call happens inside the node; here we just replay it as tokens).
