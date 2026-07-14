@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     scraper_timeout_ms: int = 30_000
     scraper_min_delay_ms: int = 1500
     scraper_max_delay_ms: int = 3500
-    scraper_headless: bool = True
+    scraper_headless: bool = False         # headed by default — watch the cursor surf live
     max_html_chars: int = 8000              # chars fed to content extractor LLM
 
     # ReAct loop

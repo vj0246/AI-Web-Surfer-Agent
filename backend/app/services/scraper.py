@@ -73,6 +73,92 @@ async def _stream_frames(page, session_id: str, url: str, count: int, interval: 
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Visible cursor — an injected overlay that renders in both the real desktop
+# Chrome window and the streamed screenshots, so you watch the pointer glide
+# to each field and click.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_CURSOR_INIT_JS = r"""
+(() => {
+  if (window.__agentCursorInit) return;
+  window.__agentCursorInit = true;
+  window.__agentCursorPos = [40, 40];
+  const install = () => {
+    if (document.getElementById('__agent_cursor')) return;
+    const c = document.createElement('div');
+    c.id = '__agent_cursor';
+    c.style.cssText = 'position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;'
+      + 'width:24px;height:24px;transform:translate(40px,40px);'
+      + 'filter:drop-shadow(0 1px 2px rgba(0,0,0,.5));transition:transform .04s linear;';
+    c.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+      + '<path d="M3 2 L3 20 L8 15 L11.5 22 L14.5 20.7 L11 14 L18 14 Z" '
+      + 'fill="#111" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+    (document.body || document.documentElement).appendChild(c);
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
+  else install();
+  window.__moveAgentCursor = (x, y) => {
+    window.__agentCursorPos = [x, y];
+    const c = document.getElementById('__agent_cursor');
+    if (c) c.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+  };
+  window.__agentClickPulse = (x, y) => {
+    const p = document.createElement('div');
+    p.style.cssText = 'position:fixed;left:0;top:0;z-index:2147483646;pointer-events:none;'
+      + 'width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;border:2px solid #ff375f;'
+      + 'transform:translate(' + x + 'px,' + y + 'px) scale(.3);opacity:.9;'
+      + 'transition:transform .35s ease-out,opacity .35s ease-out;';
+    (document.body || document.documentElement).appendChild(p);
+    requestAnimationFrame(() => {
+      p.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(1.4)';
+      p.style.opacity = '0';
+    });
+    setTimeout(() => p.remove(), 420);
+  };
+})();
+"""
+
+
+async def _glide_cursor(page, x: float, y: float, steps: int = 22, delay: float = 0.014) -> None:
+    """Animate the injected cursor (and dispatch real mouse moves) from its current
+    position to (x, y) in small steps, so the pointer visibly travels across the page."""
+    try:
+        start = await page.evaluate("() => window.__agentCursorPos || [40,40]")
+    except Exception:
+        start = [x, y]
+    sx, sy = float(start[0]), float(start[1])
+    for i in range(1, steps + 1):
+        nx = sx + (x - sx) * i / steps
+        ny = sy + (y - sy) * i / steps
+        try:
+            await page.mouse.move(nx, ny)
+            await page.evaluate("([x,y]) => window.__moveAgentCursor && window.__moveAgentCursor(x,y)", [nx, ny])
+        except Exception:
+            return
+        await asyncio.sleep(delay)
+
+
+async def _glide_to(page, locator, session_id: str = "", url: str = "") -> bool:
+    """Glide the visible cursor to a locator's centre and pulse. False if it has no box."""
+    try:
+        box = await locator.bounding_box()
+    except Exception:
+        box = None
+    if not box:
+        return False
+    cx = box["x"] + box["width"] / 2
+    cy = box["y"] + box["height"] / 2
+    await _glide_cursor(page, cx, cy)
+    try:
+        await page.evaluate("([x,y]) => window.__agentClickPulse && window.__agentClickPulse(x,y)", [cx, cy])
+    except Exception:
+        pass
+    if session_id:
+        await _capture_frame(page, session_id, url)
+    return True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # GoIndiGo form automation
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -88,6 +174,7 @@ async def _dismiss_popup(page) -> None:
         try:
             btn = page.locator(sel).first
             if await btn.is_visible(timeout=1000):
+                await _glide_to(page, btn)
                 await btn.click(timeout=1000)
                 await page.wait_for_timeout(500)
                 break
@@ -102,6 +189,7 @@ async def _fill_airport(page, field_selectors: list[str], city_name: str, iata: 
             field = page.locator(sel).first
             if not await field.is_visible(timeout=2000):
                 continue
+            await _glide_to(page, field)
             await field.click(timeout=2000)
             await page.wait_for_timeout(400)
             await field.fill("")
@@ -124,6 +212,7 @@ async def _fill_airport(page, field_selectors: list[str], city_name: str, iata: 
                 try:
                     opt = page.locator(ac_sel).first
                     if await opt.is_visible(timeout=1500):
+                        await _glide_to(page, opt)
                         await opt.click(timeout=1500)
                         picked = True
                         break
@@ -170,6 +259,7 @@ async def _automate_indigo(page, flight_params: dict, session_id: str) -> None:
         try:
             el = page.locator(sel).first
             if await el.is_visible(timeout=1000):
+                await _glide_to(page, el)
                 await el.click(timeout=1000)
                 await page.wait_for_timeout(300)
                 break
@@ -220,6 +310,7 @@ async def _automate_indigo(page, flight_params: dict, session_id: str) -> None:
             try:
                 date_field = page.locator(sel).first
                 if await date_field.is_visible(timeout=1500):
+                    await _glide_to(page, date_field)
                     await date_field.click(timeout=1500)
                     await page.wait_for_timeout(400)
                     # Try ISO format first (YYYY-MM-DD), then DD/MM/YYYY
@@ -237,6 +328,7 @@ async def _automate_indigo(page, flight_params: dict, session_id: str) -> None:
                                 f"[aria-label*='{date_short}'], td:has-text('{date_short[:2].lstrip('0')}'):not([class*='disabled'])"
                             ).first
                             if await day_cell.is_visible(timeout=1000):
+                                await _glide_to(page, day_cell)
                                 await day_cell.click(timeout=1000)
                         except Exception:
                             pass
@@ -261,6 +353,7 @@ async def _automate_indigo(page, flight_params: dict, session_id: str) -> None:
         try:
             btn = page.locator(sel).first
             if await btn.is_visible(timeout=1500):
+                await _glide_to(page, btn, session_id, url)
                 await btn.click(timeout=2000)
                 clicked_search = True
                 break
@@ -332,6 +425,7 @@ def _scrape_sync(
                 await context.add_init_script(
                     "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
                 )
+                await context.add_init_script(_CURSOR_INIT_JS)
                 page = await context.new_page()
 
                 # Signal navigation start
@@ -368,11 +462,14 @@ def _scrape_sync(
                     if session_id:
                         await _stream_frames(page, session_id, url, count=4, interval=0.45)
 
+                    # Cursor wanders across the page so movement is visible on any site.
+                    await _glide_cursor(page, 640, 320)
                     await page.evaluate("window.scrollBy(0, 400)")
                     await page.wait_for_timeout(700 if travel else 250)
                     if session_id:
                         await _stream_frames(page, session_id, url, count=3, interval=0.4)
 
+                    await _glide_cursor(page, 900, 540)
                     await page.evaluate("window.scrollBy(0, 500)")
                     await page.wait_for_timeout(500 if travel else 200)
                     if session_id:
