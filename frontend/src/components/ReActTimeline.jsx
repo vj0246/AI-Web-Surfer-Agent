@@ -4,11 +4,6 @@ const TYPE_CONFIG = {
   planning:     { icon: "🧭", label: "Planning",     color: "var(--amber)" },
   researching:  { icon: "🕵️", label: "Researcher",  color: "var(--accent)" },
   critiquing:   { icon: "⚖️", label: "Critic",       color: "var(--purple)" },
-  thinking:     { icon: "💭", label: "Thinking",     color: "var(--accent)" },
-  searching:    { icon: "🌐", label: "Searching",    color: "var(--accent)" },
-  ranking:      { icon: "📊", label: "Ranking",      color: "var(--text-muted)" },
-  scraping:     { icon: "🖱️", label: "Clicking",    color: "var(--coral)" },
-  extracting:   { icon: "✂️",  label: "Extracting",  color: "var(--purple)" },
   building:     { icon: "🔧", label: "Building",     color: "var(--text-muted)" },
   synthesizing: { icon: "✨", label: "Synthesizing", color: "var(--green)" },
   caching:      { icon: "💾", label: "Caching",      color: "var(--text-muted)" },
@@ -87,73 +82,6 @@ function TimelineEntry({ event, isLast }) {
           </div>
         )}
 
-        {event.type === "thinking" && data.thought && (
-          <div className="tl-thought">"{data.thought}"</div>
-        )}
-
-        {event.type === "thinking" && data.action && data.action !== "build_context" && (
-          <div className="tl-action-badge">
-            Next: <strong>{data.action === "do_search" ? "SEARCH" : data.action === "do_scrape" ? "VISIT PAGES" : "DONE"}</strong>
-            {data.action_params?.query && <span className="tl-param"> "{data.action_params.query}"</span>}
-            {data.action_params?.url && <span className="tl-param"> {getDomain(data.action_params.url)}</span>}
-          </div>
-        )}
-
-        {event.type === "searching" && data.result_count > 0 && (
-          <div className="tl-meta">Found {data.result_count} results</div>
-        )}
-
-        {event.type === "scraping" && (
-          <>
-            {data.urls?.length > 0 && (
-              <div className="tl-url-chips">
-                {data.urls.map((url, i) => (
-                  <a
-                    key={i}
-                    className="tl-url-chip"
-                    href={url}
-                    target="_blank"
-                    rel="noreferrer"
-                    title={url}
-                  >
-                    <span className="tl-url-chip-icon">↗</span>
-                    {getDomain(url)}
-                  </a>
-                ))}
-              </div>
-            )}
-            {data.screenshots && Object.keys(data.screenshots).length > 0 && (
-              <div className="tl-screenshots">
-                {Object.entries(data.screenshots).map(([url, b64]) =>
-                  b64 ? (
-                    <div key={url} className="tl-screenshot-item">
-                      <span className="tl-screenshot-label">{getDomain(url)}</span>
-                      <img
-                        src={`data:image/jpeg;base64,${b64}`}
-                        className="tl-screenshot-img"
-                        alt={`Page: ${url}`}
-                        loading="lazy"
-                      />
-                    </div>
-                  ) : null
-                )}
-              </div>
-            )}
-          </>
-        )}
-
-        {event.type === "extracting" && data.pages?.length > 0 && (
-          <div className="tl-pages">
-            {data.pages.map((p, i) => (
-              <div key={i} className="tl-page-row">
-                <span className="tl-relevance" style={{ color: p.relevance >= 7 ? "var(--green)" : p.relevance >= 4 ? "var(--amber)" : "var(--red)" }}>
-                  {p.relevance?.toFixed(1)}/10
-                </span>
-                <span className="tl-page-title" title={p.url}>{p.title || p.url}</span>
-              </div>
-            ))}
-          </div>
-        )}
 
         {event.type === "cache_check" && data.cache_hit && (
           <div className="tl-cache-hit">Cache hit — skipping web search</div>

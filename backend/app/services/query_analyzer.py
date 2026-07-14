@@ -64,7 +64,7 @@ Examples:
 - "how to write a Python for loop" → code, needs_web=false, []
 
 Return JSON only. No markdown, no explanation:
-{{"query_type": "...", "needs_web": true, "sub_queries": ["..."], "is_temporal": false, "temporal_hint": null}}"""
+{{"query_type": "...", "needs_web": true, "sub_queries": ["..."], "is_temporal": false}}"""
 
 
 async def analyze_query(query: str, history_text: str) -> QueryAnalysis:
@@ -99,7 +99,6 @@ async def analyze_query(query: str, history_text: str) -> QueryAnalysis:
             needs_web=needs_web,
             sub_queries=sub_queries,
             is_temporal=is_temporal,
-            temporal_hint=data.get("temporal_hint"),
         )
         print(f"[query_analyzer] query={query!r} type={analysis.query_type} "
               f"needs_web={analysis.needs_web} (model={model_needs_web}, force={force_web}) "
@@ -113,5 +112,4 @@ async def analyze_query(query: str, history_text: str) -> QueryAnalysis:
             needs_web=True,
             sub_queries=[query],
             is_temporal=is_temporal_fast,
-            temporal_hint=None,
         )

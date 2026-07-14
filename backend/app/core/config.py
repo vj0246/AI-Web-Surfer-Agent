@@ -28,11 +28,10 @@ class Settings(BaseSettings):
     scraper_headless: bool = False         # headed by default — watch the cursor surf live
     max_html_chars: int = 8000              # chars fed to content extractor LLM
 
-    # ReAct loop
-    max_iterations: int = 3                 # max search/scrape cycles
-    max_scrape_per_iter: int = 3            # max parallel scrapes per iteration
-    min_relevant_extracts: int = 2          # extracts needed before DONE allowed
-    relevance_threshold: float = 5.0        # min score to count as relevant
+    # Research loop
+    max_scrape_per_iter: int = 3            # URLs each researcher scrapes
+    min_relevant_extracts: int = 2          # high-relevance extracts before the critic proceeds
+    relevance_threshold: float = 5.0        # min score (0-10) to count as relevant
 
     # Multi-agent orchestration
     max_researchers: int = 3                # parallel researcher agents fanned out per round

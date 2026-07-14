@@ -1,7 +1,9 @@
 """
 chat.py v0.3 — SSE streams synthesizer tokens in real time via "token" events
 """
+import asyncio
 import json
+import re
 import uuid
 
 from fastapi import APIRouter
@@ -11,7 +13,6 @@ from sse_starlette.sse import EventSourceResponse
 from app.pipeline.graph import pipeline
 from app.pipeline.state import AgentState
 from app.services.session_store import append_turn, get_history_text
-from app.services.synthesizer import stream_direct, stream_synthesis
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -84,8 +85,8 @@ async def chat_stream(request: ChatRequest):
     SSE endpoint. Pipeline events + real-time token streaming.
 
     Event types:
-      analyzing | cache_check | thinking | searching | scraping |
-      extracting | building | synthesizing | token | done | error
+      analyzing | cache_check | planning | researching | critiquing |
+      building | synthesizing | token | done | error
     """
     session_id = request.session_id or str(uuid.uuid4())
     query = request.query.strip()
@@ -101,23 +102,19 @@ async def chat_stream(request: ChatRequest):
         "needs_web": True,
         "sub_queries": [],
         "is_temporal": False,
-        "iteration": 0,
-        "max_iterations": 3,
-        "action": "",
-        "action_params": {},
-        "thought": "",
-        "observations": [],
         "search_hits": [],
         "page_extracts": [],
         "errors": [],
-        "scraped_urls": [],
-        "ranked_urls": [],
         "cache_hit": False,
         "synthesis_context": "",
         "answer": "",
         "citations": [],
-        "_pending_scrape": [],
-        "page_screenshots": {},
+        "researcher_results": [],
+        "research_tasks": [],
+        "plan_summary": [],
+        "critic_round": 0,
+        "critic_done": False,
+        "critic_note": "",
     }
 
     async def event_generator():
@@ -133,25 +130,21 @@ async def chat_stream(request: ChatRequest):
                         continue
                     final_state = {**final_state, **{k: v for k, v in node_state.items() if v is not None}}
 
-                    # for synthesize node — stream tokens instead of waiting
+                    # Synthesize node — stream the answer it already produced (single
+                    # LLM call happens inside the node; here we just replay it as tokens).
                     if node_name == "synthesize" and not final_state.get("cache_hit"):
                         yield {"data": json.dumps({
                             "type": "synthesizing", "node": "synthesize",
                             "message": "Synthesizing final answer...", "data": {},
                         })}
 
-                        context = final_state.get("synthesis_context", "")
-                        stream_fn = stream_synthesis if context else stream_direct
-                        stream_args = (
-                            (query, context, history_text) if context
-                            else (query, history_text)
-                        )
+                        answer = final_state.get("answer", "")
+                        for tok in re.findall(r"\S+\s+|\S+|\s+", answer):
+                            full_answer += tok
+                            yield {"data": json.dumps({"type": "token", "node": "token", "token": tok})}
+                            await asyncio.sleep(0.008)
 
-                        async for token in stream_fn(*stream_args):
-                            full_answer += token
-                            yield {"data": json.dumps({"type": "token", "node": "token", "token": token})}
-
-                        final_state["answer"] = full_answer
+                        final_state["answer"] = full_answer or answer
                         continue  # skip normal payload for synthesize
 
                     payload = _node_payload(node_name, final_state, node_state)
@@ -171,7 +164,6 @@ async def chat_stream(request: ChatRequest):
                     "answer": answer,
                     "citations": citations,
                     "cache_hit": final_state.get("cache_hit", False),
-                    "iterations": final_state.get("iteration", 0),
                     "errors": final_state.get("errors", []),
                 },
             })}

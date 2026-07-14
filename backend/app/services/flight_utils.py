@@ -74,25 +74,8 @@ _FLIGHT_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Sites we know work reliably with Playwright
-_RELIABLE_FLIGHT_SITES = frozenset({"goindigo.in", "cleartrip.com", "spicejet.com", "airindia.in"})
-
-
 def is_flight_query(query: str) -> bool:
     return bool(_FLIGHT_RE.search(query))
-
-
-def is_indigo_url(url: str) -> bool:
-    return "goindigo.in" in url.lower()
-
-
-def is_flight_site(url: str) -> bool:
-    try:
-        from urllib.parse import urlparse
-        host = urlparse(url).netloc.lower()
-        return any(s in host for s in _RELIABLE_FLIGHT_SITES)
-    except Exception:
-        return False
 
 
 def _extract_airports(query: str) -> tuple[str | None, str | None]:

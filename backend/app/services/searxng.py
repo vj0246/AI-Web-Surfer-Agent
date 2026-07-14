@@ -67,25 +67,3 @@ async def search(query: str, extra_engines: str | None = None) -> list[SearchHit
             ))
 
     return hits
-
-
-async def multi_search(queries: list[str]) -> list[SearchHit]:
-    """Run multiple queries and deduplicate results by URL."""
-    import asyncio
-
-    all_results = await asyncio.gather(*[search(q) for q in queries], return_exceptions=True)
-
-    seen_urls: set[str] = set()
-    merged: list[SearchHit] = []
-
-    for result in all_results:
-        if isinstance(result, Exception):
-            continue
-        for hit in result:
-            if hit.url not in seen_urls:
-                seen_urls.add(hit.url)
-                merged.append(hit)
-
-    # sort by score descending
-    merged.sort(key=lambda h: h.score, reverse=True)
-    return merged

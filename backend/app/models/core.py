@@ -12,7 +12,6 @@ class QueryAnalysis(BaseModel):
     needs_web: bool
     sub_queries: list[str]  # 1-3 specific search queries
     is_temporal: bool       # "latest", "current", "2024", etc.
-    temporal_hint: str | None = None
 
 
 class SearchHit(BaseModel):
@@ -36,11 +35,3 @@ class Citation(BaseModel):
     url: str
     title: str
     snippet: str = ""
-
-
-class ReActObservation(BaseModel):
-    iteration: int
-    action: str             # "SEARCH" | "SCRAPE" | "DONE"
-    thought: str
-    result_summary: str
-    urls_found: list[str] = Field(default_factory=list)
