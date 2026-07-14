@@ -14,20 +14,23 @@ import ollama
 
 from app.core.config import settings
 
-_PLAN_PROMPT = """You are the planner for a research agent. Break the question into distinct search angles.
+_PLAN_PROMPT = """Break this question into {n} distinct web-search queries.
 
 Question: "{query}"
 
 Existing sub-queries (may be weak): {sub_queries}
 
-Conversation history: {history_text}
+Rules:
+- Each query is SHORT: 3-8 words, keyword style, like something typed into Google.
+- NO full sentences. NO "Define...", "Explain...", "Examine...", "Provide...". Just search terms.
+- Keep the key nouns from the question in every query.
+- Each attacks a DIFFERENT angle: definition, how it works, comparison, examples, recent news.
 
-Produce {n} DISTINCT search queries. Each must attack a DIFFERENT angle (definition,
-mechanism, comparison, recent developments, concrete examples). No two may overlap.
-Each query is concrete and self-contained (a search engine could answer it).
+Good:  ["vector database explained", "vector database vs sql", "vector database use cases"]
+Bad:   ["Provide a comprehensive explanation of what vector databases are and how they work"]
 
 Return JSON only, no markdown:
-{{"tasks": ["angle 1 search query", "angle 2 search query", "angle 3 search query"]}}"""
+{{"tasks": ["query 1", "query 2", "query 3"]}}"""
 
 _CRITIC_PROMPT = """You are the critic for a research agent. Judge whether the gathered facts answer the question.
 
@@ -39,11 +42,12 @@ Facts gathered so far:
 If the facts fully answer the question, return an empty gaps list.
 If something important is MISSING, return up to {n} NEW search queries that would fill the gap.
 Each gap query must target information NOT already covered above.
+Keep gap queries SHORT: 3-8 words, keyword style, no full sentences.
 
 Return JSON only, no markdown:
 {{"covered": true, "gaps": []}}
 or
-{{"covered": false, "gaps": ["missing-angle search query", "..."]}}"""
+{{"covered": false, "gaps": ["missing angle keywords", "..."]}}"""
 
 
 def _parse_json(raw: str) -> dict | None:

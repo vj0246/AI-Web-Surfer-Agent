@@ -4,103 +4,111 @@ from app.core.config import settings
 from app.models.core import Citation, PageExtract
 
 
+def _domain(url: str) -> str:
+    try:
+        return urlparse(url).netloc or url
+    except Exception:
+        return url
+
+
+def _hit_field(hit, name: str) -> str:
+    if isinstance(hit, dict):
+        return hit.get(name, "")
+    return getattr(hit, name, "")
+
+
 def build_context(
     page_extracts: list[dict],
     search_hits: list[dict] | None = None,
 ) -> tuple[str, list[Citation]]:
     """
-    Build synthesis context from scraped page extracts + SearXNG snippets.
+    Build the synthesis context + numbered citations.
 
-    Priority:
-    1. Page extracts sorted by relevance (de-duped by domain)
-    2. If remaining budget allows, append SearXNG search snippets — these
-       often contain price/summary data that scraped pages miss (JS-heavy sites).
+    Sources are chosen best-first, one per domain, up to max_context_extracts:
+      1. Scraped page extracts that actually have content (relevant_text / key_facts).
+      2. If scraping came back thin (bot-blocked pages, empty extracts), SearXNG hit
+         snippets are promoted to first-class citeable sources so the answer is still
+         grounded and cited instead of falling back to an uncited direct answer.
+
+    Any remaining SearXNG snippets are appended as an extra un-numbered block when
+    there is char budget left (useful for price/summary data JS-heavy pages miss).
     """
     extracts = [PageExtract(**e) for e in page_extracts if e]
+    extracts = [e for e in extracts if e.relevant_text.strip() or e.key_facts]
     extracts.sort(key=lambda x: x.relevance_score, reverse=True)
 
+    sources: list[dict] = []
     seen_domains: set[str] = set()
-    selected: list[PageExtract] = []
 
-    for ex in extracts:
-        try:
-            domain = urlparse(ex.url).netloc
-        except Exception:
-            domain = ex.url
-        if domain not in seen_domains:
-            seen_domains.add(domain)
-            selected.append(ex)
-        if len(selected) >= settings.max_context_extracts:
+    for e in extracts:
+        d = _domain(e.url)
+        if d in seen_domains:
+            continue
+        seen_domains.add(d)
+        sources.append({"url": e.url, "title": e.title, "text": e.relevant_text, "facts": e.key_facts})
+        if len(sources) >= settings.max_context_extracts:
             break
+
+    # Fallback: fill remaining slots with SearXNG snippets as citeable sources.
+    used_hit_urls: set[str] = set()
+    if len(sources) < settings.max_context_extracts and search_hits:
+        for hit in search_hits:
+            if len(sources) >= settings.max_context_extracts:
+                break
+            url = _hit_field(hit, "url")
+            snippet = _hit_field(hit, "snippet")
+            if not url or not snippet:
+                continue
+            d = _domain(url)
+            if d in seen_domains:
+                continue
+            seen_domains.add(d)
+            used_hit_urls.add(url)
+            sources.append({"url": url, "title": _hit_field(hit, "title"), "text": snippet, "facts": []})
 
     citations: list[Citation] = []
     parts: list[str] = []
     total_chars = 0
 
-    for i, ex in enumerate(selected):
-        citation = Citation(
-            index=i + 1,
-            url=ex.url,
-            title=ex.title,
-            snippet=ex.relevant_text[:200],
-        )
-        citations.append(citation)
+    for i, s in enumerate(sources):
+        idx = i + 1
+        citations.append(Citation(index=idx, url=s["url"], title=s["title"], snippet=s["text"][:200]))
 
-        section_lines = [f"[{i + 1}] {ex.title}", f"Source: {ex.url}"]
-        if ex.key_facts:
-            section_lines.append("Key facts:")
-            section_lines.extend(f"  • {f}" for f in ex.key_facts)
-        if ex.relevant_text:
-            section_lines.append(ex.relevant_text)
-
-        section = "\n".join(section_lines)
+        lines = [f"[{idx}] {s['title']}", f"Source: {s['url']}"]
+        if s["facts"]:
+            lines.append("Key facts:")
+            lines.extend(f"  • {f}" for f in s["facts"])
+        if s["text"]:
+            lines.append(s["text"])
+        section = "\n".join(lines)
 
         if total_chars + len(section) > settings.max_context_chars:
             remaining = settings.max_context_chars - total_chars
             if remaining > 200:
                 parts.append(section[:remaining] + "…")
             break
-
         parts.append(section)
         total_chars += len(section)
 
-    # Supplement with SearXNG search snippets when there is budget remaining.
-    # These snippets come directly from search engine result pages and often
-    # contain price, date, and summary data not available in scraped HTML.
+    # Extra snippets (not already used) as bonus context if budget remains.
     snippet_budget = settings.max_context_chars - total_chars
     if search_hits and snippet_budget > 400:
-        snippet_lines = ["[SEARCH SNIPPETS — direct from search engine results]"]
-        added_snippet_domains: set[str] = set()
-
+        snippet_lines = ["[ADDITIONAL SEARCH SNIPPETS]"]
+        added: set[str] = set(seen_domains)
         for hit in search_hits:
-            if isinstance(hit, dict):
-                url = hit.get("url", "")
-                title = hit.get("title", "")
-                snippet = hit.get("snippet", "")
-            else:
-                url = getattr(hit, "url", "")
-                title = getattr(hit, "title", "")
-                snippet = getattr(hit, "snippet", "")
-
-            if not snippet or not url:
+            url = _hit_field(hit, "url")
+            snippet = _hit_field(hit, "snippet")
+            if not url or not snippet or url in used_hit_urls:
                 continue
-
-            try:
-                domain = urlparse(url).netloc
-            except Exception:
-                domain = url
-
-            if domain in added_snippet_domains:
+            d = _domain(url)
+            if d in added:
                 continue
-            added_snippet_domains.add(domain)
-
-            line = f"• [{title}] ({domain}): {snippet[:250]}"
+            added.add(d)
+            line = f"• [{_hit_field(hit, 'title')}] ({d}): {snippet[:250]}"
             if sum(len(l) for l in snippet_lines) + len(line) > snippet_budget:
                 break
             snippet_lines.append(line)
-
-        if len(snippet_lines) > 1:   # has at least one snippet
+        if len(snippet_lines) > 1:
             parts.append("\n".join(snippet_lines))
 
-    context = "\n\n---\n\n".join(parts)
-    return context, citations
+    return "\n\n---\n\n".join(parts), citations
