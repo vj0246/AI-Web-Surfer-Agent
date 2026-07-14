@@ -10,6 +10,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
+from app.core.config import settings
 from app.pipeline.graph import pipeline
 from app.pipeline.state import AgentState
 from app.services.session_store import append_turn, get_history_text
@@ -73,7 +74,7 @@ def _node_payload(node: str, state: AgentState, update: dict | None = None) -> d
             "round": state.get("critic_round", 0),
             "high_relevance": sum(
                 1 for e in state.get("page_extracts", [])
-                if (e.get("relevance_score", 0) if isinstance(e, dict) else 0) >= 5.0
+                if (e.get("relevance_score", 0) if isinstance(e, dict) else 0) >= settings.relevance_threshold
             ),
         }}
     return {**base, "data": {}}
